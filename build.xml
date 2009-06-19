@@ -12,12 +12,35 @@
 	</path>
 
 	<path id="eclipse.agent.deps.path">
+		<fileset dir="deps/agent">
+			<include name="**/*.jar" />
+		</fileset>
 		<fileset dir="deps/eclipse.agent">
 			<include name="**/*.jar" />
 		</fileset>
 	</path>
 	<path id="eclipse.agent.libs.path">
+		<fileset dir="lib/agent">
+			<include name="**/*.jar" />
+		</fileset>
 		<fileset dir="lib/eclipse.agent">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+	
+	<path id="netbeans.agent.deps.path">
+		<fileset dir="deps/agent">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="deps/netbeans.agent">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+	<path id="netbeans.agent.libs.path">
+		<fileset dir="lib/agent">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="lib/netbeans.agent">
 			<include name="**/*.jar" />
 		</fileset>
 	</path>
@@ -42,6 +65,12 @@
 			<classpath refid="eclipse.agent.deps.path" />
 			<classpath refid="eclipse.agent.libs.path" />
 		</javac>
+		
+		<mkdir dir="build/netbeans.agent" />
+		<javac srcdir="src_netbeansagent" debug="on" destdir="build/netbeans.agent">
+			<classpath refid="netbeans.agent.deps.path" />
+			<classpath refid="netbeans.agent.libs.path" />
+		</javac>
 	</target>
 	
 	<target name="unpackLibs">
@@ -49,6 +78,9 @@
 			<path refid="lombok.libs.path" />
 		</unjar>
 		<unjar dest="build/eclipse.agent">
+			<path refid="eclipse.agent.libs.path" />
+		</unjar>
+		<unjar dest="build/netbeans.agent">
 			<path refid="eclipse.agent.libs.path" />
 		</unjar>
 	</target>
@@ -82,7 +114,14 @@
 				<attribute name="Can-Redefine-Classes" value="true" />
 			</manifest>
 		</jar>
+		<jar basedir="build/netbeans.agent" destfile="dist/lombok.netbeans.agent-${lombok.version}.jar">
+			<manifest>
+				<attribute name="Premain-Class" value="lombok.netbeans.agent.NetbeansPatcher" />
+				<attribute name="Can-Redefine-Classes" value="true" />
+			</manifest>
+		</jar>
 		<copy file="dist/lombok-${lombok.version}.jar" tofile="dist/lombok.jar" />
 		<copy file="dist/lombok.eclipse.agent-${lombok.version}.jar" tofile="dist/lombok.eclipse.agent.jar" />
+		<copy file="dist/lombok.netbeans.agent-${lombok.version}.jar" tofile="dist/lombok.netbeans.agent.jar" />
 	</target>
 </project>
