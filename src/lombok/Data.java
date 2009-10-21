@@ -57,4 +57,9 @@ public @interface Data {
 	 * Default: No static constructor, instead the normal constructor is public.
 	 */
 	String staticConstructor() default "";
+	
+	Class<? extends FieldNameMangler> fieldNameMangler () default lombok.manglers.DefaultFieldNameMangler.class;
+	
+	boolean chainableSetters () default true;
+	
 }

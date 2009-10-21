@@ -26,6 +26,7 @@ import static lombok.javac.handlers.PKG.*;
 import java.lang.reflect.Modifier;
 
 import lombok.Data;
+import lombok.FieldNameMangler;
 import lombok.core.AnnotationValues;
 import lombok.core.TransformationsUtil;
 import lombok.core.AST.Kind;
@@ -70,6 +71,17 @@ public class HandleData implements JavacAnnotationHandler<Data> {
 			return false;
 		}
 		
+		FieldNameMangler fieldNameMangler = null;
+		try {
+			Class<? extends FieldNameMangler> clazz = annotation.getInstance ().fieldNameMangler (); 
+			fieldNameMangler = clazz.newInstance ();
+		} catch (InstantiationException ie) {
+			// Ignore this Exception (would log if there were a logger instance)
+		} catch (IllegalAccessException iae) {
+			// Ignore this Exception (would log if there were a logger instance)
+		}
+		boolean chainable = annotation.getInstance ().chainableSetters ();
+		
 		List<JavacNode> nodesForConstructor = List.nil();
 		for (JavacNode child : typeNode.down()) {
 			if (child.getKind() != Kind.FIELD) continue;
@@ -82,8 +94,8 @@ public class HandleData implements JavacAnnotationHandler<Data> {
 			boolean isFinal = (fieldFlags & Flags.FINAL) != 0;
 			boolean isNonNull = !findAnnotations(child, TransformationsUtil.NON_NULL_PATTERN).isEmpty();
 			if ((isFinal || isNonNull) && fieldDecl.init == null) nodesForConstructor = nodesForConstructor.append(child);
-			new HandleGetter().generateGetterForField(child, annotationNode.get());
-			if (!isFinal) new HandleSetter().generateSetterForField(child, annotationNode.get());
+			new HandleGetter().generateGetterForField(child, annotationNode.get(), fieldNameMangler);
+			if (!isFinal) new HandleSetter().generateSetterForField(child, annotationNode.get(), chainable, fieldNameMangler);
 		}
 		
 		new HandleToString().generateToStringForType(typeNode, annotationNode);

@@ -23,6 +23,7 @@ package lombok.javac.handlers;
 
 import static lombok.javac.handlers.PKG.*;
 import lombok.AccessLevel;
+import lombok.FieldNameMangler;
 import lombok.Getter;
 import lombok.core.AnnotationValues;
 import lombok.core.TransformationsUtil;
@@ -66,7 +67,7 @@ public class HandleGetter implements JavacAnnotationHandler<Getter> {
 	 * @param fieldNode The node representing the field you want a getter for.
 	 * @param pos The node responsible for generating the getter (the {@code @Data} or {@code @Getter} annotation).
 	 */
-	public void generateGetterForField(JavacNode fieldNode, DiagnosticPosition pos) {
+	public void generateGetterForField(JavacNode fieldNode, DiagnosticPosition pos, FieldNameMangler mangler) {
 		for (JavacNode child : fieldNode.down()) {
 			if (child.getKind() == Kind.ANNOTATION) {
 				if (Javac.annotationTypeMatches(Getter.class, child)) {
@@ -76,7 +77,19 @@ public class HandleGetter implements JavacAnnotationHandler<Getter> {
 			}
 		}
 		
-		createGetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, false);
+		createGetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, false, mangler);
+	}
+	void generateGetterForField (JavacNode fieldNode, AccessLevel level, DiagnosticPosition pos, FieldNameMangler mangler) {
+		for (JavacNode child : fieldNode.down()) {
+			if (child.getKind() == Kind.ANNOTATION) {
+				if (Javac.annotationTypeMatches(Getter.class, child)) {
+					//The annotation will make it happen, so we can skip it.
+					return;
+				}
+			}
+		}
+		
+		createGetterForField(level, fieldNode, fieldNode, false, mangler);
 	}
 	
 	@Override public boolean handle(AnnotationValues<Getter> annotation, JCAnnotation ast, JavacNode annotationNode) {
@@ -89,13 +102,16 @@ public class HandleGetter implements JavacAnnotationHandler<Getter> {
 	
 	private boolean createGetterForField(AccessLevel level,
 			JavacNode fieldNode, JavacNode errorNode, boolean whineIfExists) {
+		return createGetterForField (level, fieldNode, errorNode, whineIfExists, null);
+	}
+	private boolean createGetterForField(AccessLevel level, JavacNode fieldNode, JavacNode errorNode, boolean whineIfExists, FieldNameMangler mangler) {
 		if (fieldNode.getKind() != Kind.FIELD) {
 			errorNode.addError("@Getter is only supported on a field.");
 			return true;
 		}
 		
 		JCVariableDecl fieldDecl = (JCVariableDecl)fieldNode.get();
-		String methodName = toGetterName(fieldDecl);
+		String methodName = toGetterName(fieldDecl, mangler);
 		
 		for (String altName : toAllGetterNames(fieldDecl)) {
 			switch (methodExists(altName, fieldNode)) {

@@ -25,6 +25,7 @@ import java.lang.reflect.Modifier;
 import java.util.regex.Pattern;
 
 import lombok.AccessLevel;
+import lombok.FieldNameMangler;
 import lombok.core.TransformationsUtil;
 import lombok.core.AST.Kind;
 import lombok.javac.JavacNode;
@@ -66,12 +67,35 @@ class PKG {
 	/**
 	 * @return the likely getter name for the stated field. (e.g. private boolean foo; to isFoo).
 	 */
+	static String toGetterName (JCVariableDecl field, FieldNameMangler mangler) {
+		CharSequence fieldName = field.name;
+		boolean isBoolean = field.vartype.toString().equals("boolean");
+		if (mangler != null) {
+			fieldName = mangler.mangle (fieldName);
+		}
+		return TransformationsUtil.toGetterName(fieldName, isBoolean);
+	}
+	
+	/**
+	 * @return the likely getter name for the stated field. (e.g. private boolean foo; to isFoo).
+	 */
 	static String toGetterName(JCVariableDecl field) {
 		CharSequence fieldName = field.name;
 		
 		boolean isBoolean = field.vartype.toString().equals("boolean");
 		
 		return TransformationsUtil.toGetterName(fieldName, isBoolean);
+	}
+	
+	/**
+	 * @return the likely setter name for the stated field. (e.g. private boolean foo; to setFoo).
+	 */
+	static String toSetterName(JCVariableDecl field, FieldNameMangler mangler) {
+		CharSequence fieldName = field.name;
+		if (mangler != null) {
+			fieldName = mangler.mangle (fieldName);
+		}
+		return TransformationsUtil.toSetterName(fieldName);
 	}
 	
 	/**

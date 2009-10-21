@@ -24,6 +24,7 @@ package lombok.eclipse.handlers;
 import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.PKG.*;
 import lombok.AccessLevel;
+import lombok.FieldNameMangler;
 import lombok.Getter;
 import lombok.core.AnnotationValues;
 import lombok.core.TransformationsUtil;
@@ -62,7 +63,7 @@ public class HandleGetter implements EclipseAnnotationHandler<Getter> {
 	 * If not, the getter is still generated if it isn't already there, though there will not
 	 * be a warning if its already there. The default access level is used.
 	 */
-	public void generateGetterForField(EclipseNode fieldNode, ASTNode pos) {
+	public void generateGetterForField(EclipseNode fieldNode, ASTNode pos, FieldNameMangler mangler) {
 		for (EclipseNode child : fieldNode.down()) {
 			if (child.getKind() == Kind.ANNOTATION) {
 				if (annotationTypeMatches(Getter.class, child)) {
@@ -72,7 +73,19 @@ public class HandleGetter implements EclipseAnnotationHandler<Getter> {
 			}
 		}
 		
-		createGetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, pos, false);
+		createGetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, pos, false, mangler);
+	}
+	void generateGetterForField (EclipseNode fieldNode, AccessLevel level, ASTNode pos, FieldNameMangler mangler) {
+		for (EclipseNode child : fieldNode.down()) {
+			if (child.getKind() == Kind.ANNOTATION ) {
+				if (annotationTypeMatches(Getter.class, child)) {
+					//The annotation will make it happen, so we can skip it.
+					return;
+				}
+			}
+		}
+		
+		createGetterForField(level, fieldNode, fieldNode, pos, false, mangler);
 	}
 	
 	public boolean handle(AnnotationValues<Getter> annotation, Annotation ast, EclipseNode annotationNode) {
@@ -85,6 +98,9 @@ public class HandleGetter implements EclipseAnnotationHandler<Getter> {
 	
 	private boolean createGetterForField(AccessLevel level,
 			EclipseNode fieldNode, EclipseNode errorNode, ASTNode source, boolean whineIfExists) {
+		return createGetterForField (level, fieldNode, errorNode, source, whineIfExists, null);
+	}
+	private boolean createGetterForField(AccessLevel level, EclipseNode fieldNode, EclipseNode errorNode, ASTNode source, boolean whineIfExists, FieldNameMangler mangler) {
 		if (fieldNode.getKind() != Kind.FIELD) {
 			errorNode.addError("@Getter is only supported on a field.");
 			return true;
@@ -94,6 +110,9 @@ public class HandleGetter implements EclipseAnnotationHandler<Getter> {
 		TypeReference fieldType = copyType(field.type, source);
 		String fieldName = new String(field.name);
 		boolean isBoolean = nameEquals(fieldType.getTypeName(), "boolean") && fieldType.dimensions() == 0;
+		if (mangler != null) {
+			fieldName = mangler.mangle (fieldName).toString ();
+		}
 		String getterName = TransformationsUtil.toGetterName(fieldName, isBoolean);
 		
 		int modifier = toModifier(level) | (field.modifiers & ClassFileConstants.AccStatic);

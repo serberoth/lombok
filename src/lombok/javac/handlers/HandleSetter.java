@@ -23,6 +23,7 @@ package lombok.javac.handlers;
 
 import static lombok.javac.handlers.PKG.*;
 import lombok.AccessLevel;
+import lombok.FieldNameMangler;
 import lombok.Setter;
 import lombok.core.AnnotationValues;
 import lombok.core.TransformationsUtil;
@@ -38,9 +39,11 @@ import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCAssign;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
+import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
+import com.sun.tools.javac.tree.JCTree.JCReturn;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
@@ -68,7 +71,7 @@ public class HandleSetter implements JavacAnnotationHandler<Setter> {
 	 * @param fieldNode The node representing the field you want a setter for.
 	 * @param pos The node responsible for generating the setter (the {@code @Data} or {@code @Setter} annotation).
 	 */
-	public void generateSetterForField(JavacNode fieldNode, DiagnosticPosition pos) {
+	public void generateSetterForField(JavacNode fieldNode, DiagnosticPosition pos, boolean chainable, FieldNameMangler mangler) {
 		for (JavacNode child : fieldNode.down()) {
 			if (child.getKind() == Kind.ANNOTATION) {
 				if (Javac.annotationTypeMatches(Setter.class, child)) {
@@ -78,26 +81,42 @@ public class HandleSetter implements JavacAnnotationHandler<Setter> {
 			}
 		}
 		
-		createSetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, false);
+		createSetterForField(AccessLevel.PUBLIC, fieldNode, fieldNode, false, chainable, mangler);
+	}
+	void generateSetterForField (JavacNode fieldNode, AccessLevel level, DiagnosticPosition pos, boolean chainable, FieldNameMangler mangler) {
+		for (JavacNode child : fieldNode.down()) {
+			if (child.getKind() == Kind.ANNOTATION) {
+				if (Javac.annotationTypeMatches(Setter.class, child)) {
+					//The annotation will make it happen, so we can skip it.
+					return;
+				}
+			}
+		}
+		
+		createSetterForField(level, fieldNode, fieldNode, false, chainable, mangler);
 	}
 	
 	@Override public boolean handle(AnnotationValues<Setter> annotation, JCAnnotation ast, JavacNode annotationNode) {
 		JavacNode fieldNode = annotationNode.up();
 		AccessLevel level = annotation.getInstance().value();
 		if (level == AccessLevel.NONE) return true;
+		boolean chainable = annotation.getInstance ().chainable ();
 		
-		return createSetterForField(level, fieldNode, annotationNode, true);
+		return createSetterForField(level, fieldNode, annotationNode, true, chainable);
 	}
 	
 	private boolean createSetterForField(AccessLevel level,
-			JavacNode fieldNode, JavacNode errorNode, boolean whineIfExists) {
+			JavacNode fieldNode, JavacNode errorNode, boolean whineIfExists, boolean chainable) {
+		return createSetterForField (level, fieldNode, errorNode, whineIfExists, chainable, null);
+	}
+	private boolean createSetterForField(AccessLevel level, JavacNode fieldNode, JavacNode errorNode, boolean whineIfExists, boolean chainable, FieldNameMangler mangler) {
 		if (fieldNode.getKind() != Kind.FIELD) {
 			fieldNode.addError("@Setter is only supported on a field.");
 			return true;
 		}
 		
 		JCVariableDecl fieldDecl = (JCVariableDecl)fieldNode.get();
-		String methodName = toSetterName(fieldDecl);
+		String methodName = toSetterName(fieldDecl, mangler);
 		
 		switch (methodExists(methodName, fieldNode)) {
 		case EXISTS_BY_LOMBOK:
@@ -114,33 +133,53 @@ public class HandleSetter implements JavacAnnotationHandler<Setter> {
 		
 		long access = toJavacModifier(level) | (fieldDecl.mods.flags & Flags.STATIC);
 		
-		injectMethod(fieldNode.up(), createSetter(access, fieldNode, fieldNode.getTreeMaker()));
+		injectMethod(fieldNode.up(), createSetter(access, fieldNode, fieldNode.getTreeMaker(), chainable));
 		
 		return true;
 	}
 	
-	private JCMethodDecl createSetter(long access, JavacNode field, TreeMaker treeMaker) {
+	private JCMethodDecl createSetter(long access, JavacNode field, TreeMaker treeMaker, boolean chainable) {
 		JCVariableDecl fieldDecl = (JCVariableDecl) field.get();
 		
 		JCFieldAccess thisX = treeMaker.Select(treeMaker.Ident(field.toName("this")), fieldDecl.name);
 		JCAssign assign = treeMaker.Assign(thisX, treeMaker.Ident(fieldDecl.name));
+		JCReturn $return = treeMaker.Return(treeMaker.Ident (field.toName ("this")));
 		
 		List<JCStatement> statements;
 		List<JCAnnotation> nonNulls = findAnnotations(field, TransformationsUtil.NON_NULL_PATTERN);
 		List<JCAnnotation> nullables = findAnnotations(field, TransformationsUtil.NULLABLE_PATTERN);
 		
 		if (nonNulls.isEmpty()) {
-			statements = List.<JCStatement>of(treeMaker.Exec(assign));
+			if (chainable) {
+				statements = List.<JCStatement>of(treeMaker.Exec(assign), $return);
+			} else {
+				statements = List.<JCStatement>of(treeMaker.Exec(assign));
+			}
 		} else {
 			JCStatement nullCheck = generateNullCheck(treeMaker, field);
-			if (nullCheck != null) statements = List.<JCStatement>of(nullCheck, treeMaker.Exec(assign));
-			else statements = List.<JCStatement>of(treeMaker.Exec(assign));
+			if (nullCheck != null) {
+				if (chainable) {
+					statements = List.<JCStatement>of(nullCheck, treeMaker.Exec(assign), $return);
+				} else {
+					statements = List.<JCStatement>of(nullCheck, treeMaker.Exec(assign));
+				}
+			} else {
+				if (chainable) {
+					statements = List.<JCStatement>of(treeMaker.Exec(assign), $return);
+				} else {
+					statements = List.<JCStatement>of(treeMaker.Exec(assign));
+				}
+			}
 		}
 		
 		JCBlock methodBody = treeMaker.Block(0, statements);
 		Name methodName = field.toName(toSetterName(fieldDecl));
 		JCVariableDecl param = treeMaker.VarDef(treeMaker.Modifiers(Flags.FINAL, nonNulls.appendList(nullables)), fieldDecl.name, fieldDecl.vartype, null);
 		JCExpression methodType = treeMaker.Type(field.getSymbolTable().voidType);
+		if (chainable) {
+			JCClassDecl classDecl = (JCClassDecl) field.up ().get ();
+			methodType = treeMaker.Type (classDecl.sym.asType ());
+		}
 		
 		List<JCTypeParameter> methodGenericParams = List.nil();
 		List<JCVariableDecl> parameters = List.of(param);
